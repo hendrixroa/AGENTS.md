@@ -1,74 +1,43 @@
-# Testing Standards
+##### Modern Standards for Test Antipatterns and Clean Automation
 
-> **Scope:** xUnit Patterns, Test Smells, and Anti-Patterns (Based on Gerard Meszaros).
-> **Objective:** Create a maintenance-free, reliable, and fast test suite.
-> **Enforcement:** Strict.
+Here is the unified guide to test antipatterns and smells, combining the language-agnostic concepts from the *xUnit Test Patterns* book with the strict, highly-enforced rules and "Red Flags" established in 04-testing-standards.md.
 
-## 1. Core Philosophy
+##### 1. Obscure Tests, General Fixtures & Mystery Guests
+**Summary:** Tests that are difficult to understand at a glance because they hide external dependencies, construct massive setups, or contain irrelevant information.
+* **Do:** Visually structure tests using the **AAA Pattern** (Arrange, Act, Assert) to separate phases. Keep your fixtures **Minimal** by configuring only the data strictly required for the outcome. Hide complex configurations using **Creation Methods** with intent-revealing names (e.g., CreateValidUserWithAdminRole()).
+* **Don't:** Rely on **Mystery Guests** like external files or database rows containing magic data not visible in the code. Build **General Fixtures** that configure massive "setup everything" methods, which obscures the relationship between the data and the verification.
 
-### Independence & Isolation
+##### 2. Conditional Test Logic
+**Summary:** Tests that contain control structures, creating multiple execution paths that make the test non-linear and difficult to reliably verify.
+* **Do:** Keep tests as a strictly linear sequence. Use **Guard Assertions** to validate assumptions and fail fast *before* the System Under Test (SUT) acts.
+* **Don't:** NEVER use if, switch, or loops inside a test. If conditional logic feels necessary, you almost certainly need two separate tests instead.
 
-- **Atomic Tests:** Each test MUST verify **one single logical condition**. If a test fails, the reason should be obvious from the test name alone.
-- **Total Independence:** Tests MUST be able to run in *any order*. NEVER rely on state left by a previous test (Chained Tests).
-- **SUT Isolation:** The System Under Test (SUT) must be isolated from its environment. NEVER let a unit test talk to a real database, network, or file system. Use **Test Doubles**.
+##### 3. Assertion Roulette & "The Liar"
+**Summary:** Tests where failures are impossible to trace to a specific assertion, or false-positive tests that pass but verify nothing.
+* **Do:** Prefer **State Verification** (e.g., Assert.Equal) to assert that the final state is correct. Extract complex, repeated verification logic (e.g., validating a JSON structure) into clear **Custom Assertions** (e.g., AssertAddressMatches) to turn the test into a readable specification.
+* **Don't:** Write **The Liar**, a test that passes but verifies nothing (like catching an Exception and doing nothing). Use multiple assertions without distinct messages, which leads to Assertion Roulette. Use Behavior Verification (Mocks) unless you are strictly testing side effects where state cannot be observed.
 
-### State vs. Behavior
+##### 4. Erratic Tests & Interacting Tests
+**Summary:** Flaky tests that behave inconsistently or fail sporadically due to shared state, leftover data, or execution order.
+* **Do:** Write **Atomic Tests** that verify one single logical condition. Use a **Fresh Fixture** to instantiate a clean world for every single test execution. When integration testing, ensure **No Leftovers** by keeping a clean environment.
+* **Don't:** Rely on **Chained Tests** where a test assumes the state left by a previous test. NEVER reuse a mutable instance across tests, as this Shared Fixture approach leads to Interacting Tests.
 
-- **Prefer State Verification:** Assert that the final state is correct (e.g., `Assert.Equal(expected, actual)`).
-- **Avoid Behavior Verification:** Use Mock interactions (e.g., `Verify(x => x.CallWasMade())`) ONLY when testing side effects (like sending an email) where state cannot be observed.
+##### 5. Slow Tests & "The Slow Poke"
+**Summary:** Tests that take too long to run, mostly due to I/O operations, which ultimately discourages developers from running them.
+* **Do:** Ensure total **SUT Isolation** using Test Doubles. Use lightweight **Fakes** (e.g., InMemoryDatabase or FakeFileSystem) to replace slow dependencies. For database tests, use **Transaction Rollback Teardown** (wrapping tests in a transaction and rolling it back in the teardown phase) to instantly reset the fixture.
+* **Don't:** Write unit tests taking **> 100ms**, which is a Red Flag known as **The Slow Poke**. Allow unit tests to communicate with a real database, network, or file system.
 
-## 2. Test Fixture Patterns (Setup)
+##### 6. Fragile Tests & Overspecification
+**Summary:** Tests that break due to internal implementation changes rather than behavioral changes, tightly coupling the test to the SUT.
+* **Do:** Clearly separate your Test Doubles: Use **Stubs** to provide indirect *inputs* to the SUT, and use **Mocks** solely to verify indirect *outputs*.
+* **Don't:** Create Overspecified Mocks that break when you change internal implementation details. Share a development database to run tests, which causes **Test Run Wars**; instead, each agent or developer must use a dedicated **Sandbox** instance.
 
-### DO
+##### 7. Test Logic in Production & The Humble Object Violation
+**Summary:** Mingling testing-only logic and flags inside production code, or attempting to test complex business logic through an untestable context.
+* **Do:** Use Dependency Injection or Test-Specific Subclasses to isolate behavior. Extract logic from untestable contexts into a clean domain class.
+* **Don't:** Insert **Test Hooks** (e.g., if (TESTING_MODE)) into production code. Commit **The Humble Object Violation** by trying to test complex logic through a UI or Controller layer.
 
-- **Fresh Fixture:** Create a brand new, clean fixture for EVERY test execution. Use `SetUp`/`BeforeEach` or helper methods to instantiate a fresh world.
-- **Minimal Fixture:** Only configure the data strictly required for the test. If a property doesn't affect the outcome, don't set it explicitly.
-- **Creation Methods:** Use Factory Methods or Builders with intent-revealing names to hide complex setup.
-  - *Example:* `var user = CreateValidUserWithAdminRole();`
-
-### DON'T
-
-- **Shared Fixture:** NEVER reuse a mutable instance across tests. This leads to **Interacting Tests** and debugging nightmares.
-- **General Fixture:** Avoid massive "setup everything" methods. They create **Obscure Tests** where the relationship between data and verification is unclear.
-- **Mystery Guest:** Do not use external files or database rows containing "magic data" that is not visible within the test code.
-
-## 3. Test Logic & Verification
-
-### DO
-
-- **AAA Pattern:** Visually separate **Arrange**, **Act**, and **Assert**.
-- **Guard Assertions:** Use assertions to validate assumptions *before* the SUT acts. Fail fast if the setup is wrong.
-- **Custom Assertions:** Encapsulate complex verification logic (e.g., verifying a JSON structure) into a reusable method with a clear name.
-  - **Problem:** Repeated complex verification logic (e.g., checking a JSON schema or a complex object state) leads to code duplication and **Assertion Roulette**.
-  - **Solution:** Extract logic into **Custom Assertion Methods**.
-    - *Example:* Instead of writing 5 lines to check an address, write: `AssertAddressMatches(expectedAddress, actualUser.Address)`.
-  - **Benefit:** Turns the test into a readable "Specification"
-
-### DON'T
-
-- **Conditional Logic:** NEVER use `if`, `switch`, or loops inside a test. A test must be a linear sequence. If you need logic, you likely need two separate tests.
-- **Assertion Roulette:** Avoid multiple asserts without messages. If one fails, you won't know which one it was. Ideally, stick to one logical assert per test.
-- **Test Hooks:** NEVER put logic in production code like `if (TESTING_MODE)`. Use Dependency Injection or Test-Specific Subclasses instead.
-
-## 4. Double Strategy (Mocks & Stubs)
-
-- **Stubs:** Use them to provide indirect **inputs** to the SUT (e.g., "When the repo is asked for ID 1, return User A").
-- **Mocks:** Use them to verify indirect **outputs** of the SUT (e.g., "Verify that the EmailService.Send() was called once").
-- **Fakes:** Use lightweight in-memory implementations (e.g., `InMemoryDatabase`, `FakeFileSystem`) to replace slow dependencies.
-
-## 5. Integration & Database Strategy
-
-When you MUST test with a database (Integration Tests):
-
-- **Transaction Rollback Teardown:** Wrap the test in a transaction and roll it back in the `Teardown/After` phase. This ensures a **Fresh Fixture** instantly.
-- **Sandbox Pattern:** Each developer/agent must use a dedicated DB instance. NEVER share a development database for running tests (**Test Run Wars**).
-- **No Leftovers:** A test must never leave data behind.
-
-## 6. Anti-Patterns Detection (The Red Flags)
-
-The Agent must refuse to generate code that exhibits these smells:
-
-1. **The Slow Poke:** Unit tests taking > 100ms. (Likely hitting I/O).
-2. **The Fragile Test:** Tests that break when you change internal implementation details (Overspecified Mocks).
-3. **The Liar:** A test that passes but verifies nothing (e.g., catching an Exception and doing nothing).
-4. **The Humble Object Violation:** Trying to test complex logic through a UI or Controller. Extract the logic to a domain class.
+##### 8. Test Code Duplication
+**Summary:** Repeating the exact same setup or assertion logic across multiple tests, massively increasing the test maintenance cost.
+* **Do:** Encapsulate duplicated logic into **Creation Methods** and **Custom Assertions**. Visually separate code using the **AAA Pattern** to make duplication obvious to spot and extract.
+* **Don't:** Create tests via Cut-and-Paste reuse, or repeat complex verification lines instead of extracting them into a reusable method.
