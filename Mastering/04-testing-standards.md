@@ -1,4 +1,4 @@
-##### Modern Standards for Test Antipatterns and Clean Automation
+# Modern Standards for Test Antipatterns and Clean Automation
 
 Here is the unified guide to test antipatterns and smells, combining the language-agnostic concepts from the *xUnit Test Patterns* book with the strict, highly-enforced rules and "Red Flags" established in 04-testing-standards.md.
 
